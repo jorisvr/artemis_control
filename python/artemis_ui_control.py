@@ -1,11 +1,15 @@
 #!/usr/bin/python3
 
+import sys
+import optparse
 import time
 import socket
 import select
+import serial
 
-import PIL.ImageGrab
+#import PIL.ImageGrab
 import ctypes
+import win32api
 import win32con
 
 
@@ -348,10 +352,57 @@ class TcpServer:
             sock.sendall(b'Ok\n')
         else:
             sock.sendall(b'Unknown_Cmd\n')
-        
+
+
+def commandLoop(dev, handler):
+    """Command loop for serial port interfacing."""
+
+    while True:
+        s = dev.readline()
+        s = s.strip()
+        print("Got command", repr(s))
+        if s.lower() == b'pause':
+            handler.pause()
+            dev.write(b'Ok\n')
+        else:
+            print("ERROR: Unknown command", repr(s))
+
+
+def ctrlc_handler(ctrlType):
+    # needed to be able to Ctrl-C out of select() on Windows
+    sys.exit(1)
+
 
 def main():
-    
+
+    parser = optparse.OptionParser()
+    parser.add_option("--tcp", action="store_true",
+                      help="Enable TCP server for accepting control messages")
+    parser.add_option("--port", action="store", type="int", default=5123,
+                      help="TCP port number for control messages")
+    parser.add_option("--serial", action="store", type="string",
+                      help="Read control messages from serial port")
+    parser.add_option("--baud", action="store", type="int", default=38400,
+                      help="Baud rate of serial port")
+    (options, args) = parser.parse_args()
+
+    if args:
+        print("ERROR: Unexpected arguments", file=sys.stderr)
+        parser.print_help()
+        sys.exit(1)
+
+    if (not options.tcp) and (not options.serial):
+        print("ERROR: Specify either --tcp or --serial <port>", file=sys.stderr)
+        parser.print_help()
+        sys.exit(1)
+
+    if options.tcp and options.serial:
+        print("ERROR: Combination of --tcp and --serial not supported", file=sys.stderr)
+        parser.print_help()
+        sys.exit(1)
+
+    win32api.SetConsoleCtrlHandler(ctrlc_handler)
+
     w = WinStuff()
 
     class Handler:
@@ -370,8 +421,16 @@ def main():
             time.sleep(0.02)
 
     handler = Handler()
-    srv = TcpServer(5123, handler)
-    srv.run()
+
+    if options.tcp:
+        srv = TcpServer(options.port, handler)
+        print("Waiting for TCP connections on port", options.port)
+        srv.run()
+
+    elif options.serial:
+        dev = serial.Serial(port=options.serial, baudrate=options.baud)
+        print("Reading commands from serial port", options.serial)
+        commandLoop(dev, handler)
 
 """    
     i = 0
