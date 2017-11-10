@@ -12,6 +12,8 @@ import ctypes
 import win32api
 import win32con
 
+VERBOSE = 1
+
 
 class WinMouseInput(ctypes.Structure):
     _fields_ = [        
@@ -73,15 +75,16 @@ class WinStuff:
 
         self.eventDelay = eventDelay
 
+        if VERBOSE: print("creating device context")
         self.hdc = self.__wGetDC(None)
         if not self.hdc:
             raise WinError("Can not get Device Context for display (%s)" %
                            self.getLastErrorStr())
 
-        setdpiaware = getattr(ctypes.windll.shcore, 'SetProcessDpiAwareness',
-                              None)
-        if setdpiaware is not None:
-            setdpiaware(1)
+#        setdpiaware = getattr(ctypes.windll.shcore, 'SetProcessDpiAwareness',
+#                              None)
+#        if setdpiaware is not None:
+#            setdpiaware(1)
 
     def __del__(self):
 
@@ -375,6 +378,8 @@ def ctrlc_handler(ctrlType):
 
 def main():
 
+    if VERBOSE: print("starting main")
+
     parser = optparse.OptionParser()
     parser.add_option("--tcp", action="store_true",
                       help="Enable TCP server for accepting control messages")
@@ -401,8 +406,10 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    if VERBOSE: print("setting ctrlc handler")
     win32api.SetConsoleCtrlHandler(ctrlc_handler)
 
+    if VERBOSE: print("initializing Windows stuff")
     w = WinStuff()
 
     class Handler:
@@ -420,6 +427,7 @@ def main():
             w.keyType(win32con.VK_ESCAPE)
             time.sleep(0.02)
 
+    if VERBOSE: print("initializing command handler")
     handler = Handler()
 
     if options.tcp:
@@ -428,6 +436,7 @@ def main():
         srv.run()
 
     elif options.serial:
+        if VERBOSE: print("opening serial port")
         dev = serial.Serial(port=options.serial, baudrate=options.baud)
         print("Reading commands from serial port", options.serial)
         commandLoop(dev, handler)
