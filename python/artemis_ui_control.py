@@ -70,7 +70,7 @@ class WinStuff:
     __wSendInput        = ctypes.windll.user32.SendInput
     __wGetPixel         = ctypes.windll.gdi32.GetPixel
 
-    def __init__(self, eventDelay=0.001):
+    def __init__(self, eventDelay=0.01):
         """Create required system handles."""
 
         self.eventDelay = eventDelay
@@ -389,6 +389,10 @@ def main():
                       help="Read control messages from serial port")
     parser.add_option("--baud", action="store", type="int", default=38400,
                       help="Baud rate of serial port")
+    parser.add_option("--typedelay", action="store", type="float", default=0.05,
+                      help="Wait time between click/type actions")
+    parser.add_option('--screenshot', action='store_true',
+                      help="Take screen shot before mouse click aciton")
     (options, args) = parser.parse_args()
 
     if args:
@@ -406,6 +410,9 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    if options.screenshot:
+        import PIL.ImageGrab
+
     if VERBOSE: print("setting ctrlc handler")
     win32api.SetConsoleCtrlHandler(ctrlc_handler)
 
@@ -414,18 +421,29 @@ def main():
 
     class Handler:
 
+        sscnt = 0
+
+        def screenshot(self):
+            if VERBOSE: print("saving screenshot")
+            (xs,ys) = w.getScreenSize()
+            img = PIL.ImageGrab.grab()
+            self.sscnt += 1
+            img.save('screenshot%04d.png' % self.sscnt)
+
         def pause(self):
             # press ESC
             w.keyType(win32con.VK_ESCAPE)
-            time.sleep(0.02)
+            time.sleep(options.typedelay)
+            if options.screenshot:
+                self.screenshot()
             # click pause button (coordinates in range 0 .. 65535 for full screen)
             PAUSE_BUTTON_X = 6143
             PAUSE_BUTTON_Y = 6675
             w.mouseClick(PAUSE_BUTTON_X, PAUSE_BUTTON_Y, w.BUTTON_LEFT)
-            time.sleep(0.02)
+            time.sleep(options.typedelay)
             # press ESC again
             w.keyType(win32con.VK_ESCAPE)
-            time.sleep(0.02)
+            time.sleep(options.typedelay)
 
     if VERBOSE: print("initializing command handler")
     handler = Handler()
