@@ -11,6 +11,7 @@ import serial
 import ctypes
 import win32api
 import win32con
+import win32gui
 
 VERBOSE = 1
 
@@ -49,6 +50,14 @@ class WinInput(ctypes.Structure):
     _fields_ = [
         ('type',        ctypes.c_uint),
         ('u',           __InputUnion) ]
+
+class WinKbdLLHookStruct(ctypes.Structure):
+    _fields_ = [
+        ('keycode', ctypes.c_uint),
+        ('scancode', ctypes.c_uint),
+        ('flags', ctypes.c_uint),
+        ('time', ctypes.c_uint),
+        ('info', ctypes.POINTER(ctypes.c_ulong)) ]
 
 
 class WinError(Exception):
@@ -357,6 +366,38 @@ class TcpServer:
             sock.sendall(b'Unknown_Cmd\n')
 
 
+class KeyboardHook:
+
+    def __init__(self, handler):
+
+        self.handler = handler
+        functype = ctypes.WINFUNCTYPE(ctypes.wintypes.LPARAM,
+                                      ctypes.wintypes.INT,
+                                      ctypes.wintypes.WPARAM,
+                                      ctypes.wintypes.LPARAM)
+        self.pfunc = functype(self.keyboardProc)
+        self.handle = ctypes.windll.user32.SetWindowsHookExA(win32con.WH_KEYBOARD_LL, self.pfunc, win32api.GetModuleHandle(None), 0)
+
+    def keyboardProc(self, nCode, wParam, lParam):
+        if wParam == win32con.WM_KEYDOWN:
+            data = ctypes.cast(lParam, ctypes.POINTER(WinKbdLLHookStruct)).contents
+            self.keyboardEvent(data)
+        return ctypes.windll.user32.CallNextHookEx(self.handle, nCode, wParam, ctypes.wintypes.LPARAM(lParam))
+
+    def keyboardEvent(self, data):
+        if data.keycode == ord('P'):
+            # user pressed P
+            print("Got key P")
+            self.handler.pause()
+
+    def run(self):
+
+       while True:
+            msg = win32gui.GetMessage(None, 0, 0)
+            win32gui.TranslateMessage(ctypes.byref(msg))
+            win32gui.DispatchMessage(ctypes.byref(msg))
+
+
 def commandLoop(dev, handler):
     """Command loop for serial port interfacing."""
 
@@ -387,9 +428,11 @@ def main():
                       help="TCP port number for control messages")
     parser.add_option("--serial", action="store", type="string",
                       help="Read control messages from serial port")
+    parser.add_option("--keybd", action="store_true",
+                      help="Read control messages from keyboard")
     parser.add_option("--baud", action="store", type="int", default=38400,
                       help="Baud rate of serial port")
-    parser.add_option("--typedelay", action="store", type="float", default=0.05,
+    parser.add_option("--typedelay", action="store", type="float", default=0.1,
                       help="Wait time between click/type actions")
     parser.add_option('--screenshot', action='store_true',
                       help="Take screen shot before mouse click aciton")
@@ -400,13 +443,13 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    if (not options.tcp) and (not options.serial):
-        print("ERROR: Specify either --tcp or --serial <port>", file=sys.stderr)
+    if (not options.tcp) and (not options.serial) and (not options.keybd):
+        print("ERROR: Specify either --tcp or --serial <port> or --keybd", file=sys.stderr)
         parser.print_help()
         sys.exit(1)
 
-    if options.tcp and options.serial:
-        print("ERROR: Combination of --tcp and --serial not supported", file=sys.stderr)
+    if (1 if options.tcp else 0) + (1 if options.serial else 0) + (1 if options.keybd else 0) > 1:
+        print("ERROR: Combination of --tcp and --serial and --keybd not supported", file=sys.stderr)
         parser.print_help()
         sys.exit(1)
 
@@ -458,6 +501,11 @@ def main():
         dev = serial.Serial(port=options.serial, baudrate=options.baud)
         print("Reading commands from serial port", options.serial)
         commandLoop(dev, handler)
+
+    elif options.keybd:
+        if VERBOSE: print("installing keyboard hook")
+        kbdh = KeyboardHook(handler)
+        kbdh.run()
 
 """    
     i = 0
